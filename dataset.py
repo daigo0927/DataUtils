@@ -47,50 +47,41 @@ class BaseDataset(Dataset, metaclass = ABCMeta):
     def __init__(self): pass
     def __len__(self): return len(self.samples)
     def __getitem__(self, idx):
-        img1_path, img2_path, flow_path = self.samples[idx]
-        img1, img2 = map(imageio.imread, (img1_path, img2_path))
-        flow = load_flow(flow_path)
+        img1_path, img2_path, img3_path = self.samples[idx]
+        img1, img2, img3 = map(imageio.imread, (img1_path, img2_path, img3_path))
 
         if self.color == 'gray':
             img1 = cv2.cvtColor(img1, cv2.COLOR_RGB2GRAY)[:,:,np.newaxis]
             img2 = cv2.cvtColor(img2, cv2.COLOR_RGB2GRAY)[:,:,np.newaxis]
+            img3 = cv2.cvtColor(img3, cv2.COLOR_RGB2GRAY)[:,:,np.newaxis]
 
-        images = [img1, img2]
+        images = [img1, img2, img3]
         if self.crop_shape is not None:
-            
             cropper = StaticRandomCrop(img1.shape[:2], self.crop_shape) if self.cropper == 'random' else StaticCenterCrop(img1.shape[:2], self.crop_shape)
-            # print(cropper)
             images = list(map(cropper, images))
-            flow = cropper(flow)
+
         if self.resize_shape is not None:
             resizer = partial(cv2.resize, dsize = (0,0), dst = self.resize_shape)
             images = list(map(resizer, images))
-            flow = resizer(flow)
+
         elif self.resize_scale is not None:
             resizer = partial(cv2.resize, dsize = (0,0), fx = self.resize_scale, fy = self.resize_scale)
             images = list(map(resizer, images))
-            flow = resizer(flow)
 
-        images = np.array(images)
-        # images = np.array(images).transpose(3,0,1,2)
-        # flow = flow.transpose(2,0,1)
+        return np.array(images)
 
-        # images = torch.from_numpy(images.astype(np.float32))
-        # flow = torch.from_numpy(flow.astype(np.float32))
+    @abstractmethod
+    def has_txt(self): ...
+        # p = Path(self.dataset_dir) / (self.train_or_test + '.txt')
+        # self.samples = []
+        # with open(p, 'r') as f:
+        #     for i in f.readlines():
+        #         img1, img2, flow = i.split(',')
+        #         flow = flow.strip()
+        #         self.samples.append((img1, img2, flow))
 
-        return images, flow
-    
-    def has_txt(self):
-        p = Path(self.dataset_dir) / (self.train_or_test + '.txt')
-        self.samples = []
-        with open(p, 'r') as f:
-            for i in f.readlines():
-                img1, img2, flow = i.split(',')
-                flow = flow.strip()
-                self.samples.append((img1, img2, flow))
-
-    # @abstractmethod
-    # def has_no_txt(self): ...
+    @abstractmethod
+    def has_no_txt(self): ...
     
     def split(self, samples):
         p = Path(self.dataset_dir)
@@ -135,20 +126,11 @@ class DAVIS(BaseDataset):
                     self.samples.append((p_img_categ_imgs[j],
                                          p_img_categ_imgs[j+1],
                                          p_img_categ_imgs[j+2]))
-                
-        
-    # def has_no_txt(self):
-    #     p = Path(self.dataset_dir)
-    #     p_img = p / 'JPEGImages' / self.mode
-    #     p_flow = p / 'training/flow'
-    #     samples = []
+    def has_txt(self):
+        pass
 
-    #     collections_of_scenes = sorted(map(str, p_img.glob('**/*.png')))
-    #     from itertools import groupby
-    #     collections = [list(g) for k, g in groupby(collections_of_scenes, lambda x: x.split('/')[-2])]
-
-    #     samples = [(*i, i[0].replace(self.mode, 'flow').replace('.png', '.flo')) for collection in collections for i in window(collection, 2)]
-    #     self.split(samples)
+    def has_no_txt(self):
+        pass
     
 
 # Sintel
