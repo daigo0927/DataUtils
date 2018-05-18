@@ -1,2 +1,2 @@
 # DataUtils
-PyTorch dataLoader for some data
+PyTorch dataLoader for movie data
