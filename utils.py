@@ -39,3 +39,8 @@ def window(seq, n=2):
     for elem in it:
         result = result[1:] + (elem,)
         yield result
+
+def one_hot(label, num_classes):
+    label_onehot = np.zeros(num_classes, np.uint8)
+    label_onehot[label] = 1
+    return label_onehot
