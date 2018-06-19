@@ -10,7 +10,7 @@ import cv2
 from functools import partial
 from abc import abstractmethod, ABCMeta
 
-import utils
+from . import utils
 
 
 class BaseDataset(Dataset, metaclass = ABCMeta):
@@ -27,7 +27,7 @@ class BaseDataset(Dataset, metaclass = ABCMeta):
             image = cropper(image)
 
         if self.resize_shape is not None:
-            image = cv2.resize(image, dsize = (0,0), dst = self.resize_shape)
+            image = cv2.resize(image, tuple(self.resize_shape))
 
         elif self.resize_scale is not None:
             image = cv2.resize(image, dsize = (0,0), fx = self.resize_scale, fy = self.resize_scale)
