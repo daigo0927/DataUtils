@@ -20,6 +20,7 @@ class BaseDataset(Dataset, metaclass = ABCMeta):
     def __getitem__(self, idx):
         img_path, label = self.samples[idx]
         image = imageio.imread(img_path)
+        label = int(label)
 
         if self.crop_shape is not None:
             cropper = utils.StaticRandomCrop(image.shape[:2], self.crop_shape) if self.cropper == 'random'\
@@ -43,7 +44,7 @@ class BaseDataset(Dataset, metaclass = ABCMeta):
         with open(p, 'r') as f:
             for i in f.readlines():
                 img_path, label = i.split(',')
-                label = int(label.strip())
+                label = label.strip()
                 self.samples.append((img_path, label))
 
     @abstractmethod
