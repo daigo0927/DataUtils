@@ -10,6 +10,9 @@ import cv2
 from functools import partial
 from abc import abstractmethod, ABCMeta
 
+from .imagedata import *
+from .videodata import *
+
 class StaticRandomCrop(object):
     def __init__(self, image_size, crop_size):
         self.th, self.tw = crop_size
@@ -44,3 +47,13 @@ def one_hot(label, num_classes):
     label_onehot = np.zeros(num_classes, np.uint8)
     label_onehot[label] = 1
     return label_onehot
+
+def get_dataset(dataset_name):
+    return {
+        'Food-101':Food101,
+        'DAVIS': DAVIS,
+        'Sintel': Sintel,
+        'SintelClean': SintelClean,
+        'SintelFinal': SintelFinal,
+        'UCF101': UCF101
+    }[dataset_name]

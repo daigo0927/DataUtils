@@ -270,13 +270,13 @@ class UCF101(BaseDataset):
         self.samples = train_samples if self.train_or_val == 'train' else val_samples
     
 
-def get_dataset(dataset_name):
-    return {
-        'DAVIS': DAVIS,
-        'Sintel': Sintel,
-        'SintelClean': SintelClean,
-        'SintelFinal': SintelFinal,
-        # 'FlyingChairs': FlyingChairs,
-    }[dataset_name]
+# def get_dataset(dataset_name):
+#     return {
+#         'DAVIS': DAVIS,
+#         'Sintel': Sintel,
+#         'SintelClean': SintelClean,
+#         'SintelFinal': SintelFinal,
+#         # 'FlyingChairs': FlyingChairs,
+#     }[dataset_name]
 
 
