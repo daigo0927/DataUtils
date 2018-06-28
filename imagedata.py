@@ -7,6 +7,7 @@ import imageio
 import torch
 import random
 import cv2
+import warnings
 from functools import partial
 from abc import abstractmethod, ABCMeta
 
@@ -84,6 +85,8 @@ class Food101(BaseDataset):
         p = Path(dataset_dir) / (train_or_val + '.txt')
         if p.exists(): self.has_txt()
         else: self.has_no_txt()
+
+        warnings.filterwarnings('ignore', category = UserWarning)
 
     def has_no_txt(self):
         p = Path(self.dataset_dir)
