@@ -23,6 +23,9 @@ class BaseDataset(Dataset, metaclass = ABCMeta):
         image = imageio.imread(img_path)
         label = int(label)
 
+        if image.ndim == 2: # gray -> rgb
+            image = np.stack([image]*3, axis = 2)
+
         if self.crop_shape is not None:
             cropper = utils.StaticRandomCrop(image.shape[:2], self.crop_shape) if self.cropper == 'random'\
               else utils.StaticCenterCrop(image.shape[:2], self.crop_shape)
