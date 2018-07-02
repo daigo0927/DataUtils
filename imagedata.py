@@ -40,7 +40,10 @@ class BaseDataset(Dataset, metaclass = ABCMeta):
         if self.one_hot:
             label = utils.one_hot(label, self.num_classes)
 
-        return np.array(image), label
+        if self.use_label:
+            return np.array(image), label
+        else:
+            return np.array(image)
 
     def has_txt(self):
         p = Path(self.dataset_dir) / (self.train_or_val + '.txt')
@@ -74,13 +77,14 @@ class BaseDataset(Dataset, metaclass = ABCMeta):
 class Food101(BaseDataset):
     def __init__(self, dataset_dir, train_or_val, cropper = 'center',
                  crop_shape = None, resize_shape = None, resize_scale = None,
-                 one_hot = True):
+                 one_hot = True, use_label = False):
         super().__init__()
         self.cropper = cropper
         self.crop_shape = crop_shape
         self.resize_shape = resize_shape
         self.resize_scale = resize_scale
         self.one_hot = one_hot
+        self.use_label = use_label
 
         self.dataset_dir = dataset_dir
         self.train_or_val = train_or_val
