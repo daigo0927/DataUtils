@@ -2,8 +2,8 @@ from itertools import islice
 import numpy as np
 import random
 
-from .imagedata import *
-from .videodata import *
+from .image import *
+from .video import *
 
 class StaticRandomCrop(object):
     def __init__(self, image_size, crop_size):
@@ -13,7 +13,7 @@ class StaticRandomCrop(object):
         self.w1 = random.randint(0, w - self.tw)
 
     def __call__(self, img):
-        return img[self.h1:(self.h1+self.th), self.w1:(self.w1+self.tw),:]
+        return img[self.h1:(self.h1+self.th), self.w1:(self.w1+self.tw)]
 
 
 class StaticCenterCrop(object):
@@ -22,7 +22,7 @@ class StaticCenterCrop(object):
         self.h, self.w = image_size
         
     def __call__(self, img):
-        return img[(self.h-self.th)//2:(self.h+self.th)//2, (self.w-self.tw)//2:(self.w+self.tw)//2,:]
+        return img[(self.h-self.th)//2:(self.h+self.th)//2, (self.w-self.tw)//2:(self.w+self.tw)//2]
 
 
 def window(seq, n=2):
