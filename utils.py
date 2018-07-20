@@ -41,6 +41,11 @@ def one_hot(label, num_classes):
     label_onehot[label] = 1
     return label_onehot
 
+def txtread(uri): # to read label file encoded by .txt (e.g. SYNTHIA dataset)
+    with open(uri, 'r') as f:
+        label = np.array([list(map(int, i.strip().split())) for i in f.readlines()])
+    return label
+
 def get_dataset(dataset_name):
     return {
         'Food-101':Food101,
@@ -49,5 +54,8 @@ def get_dataset(dataset_name):
         'SintelClean': SintelClean,
         'SintelFinal': SintelFinal,
         # 'UCF101': UCF101
-        'NeedforSpeed': NeedforSpeed
+        'NeedforSpeed': NeedforSpeed,
+        'CityScapes': CityScapes,
+        'SYNTHIA': SYNTHIA,
+        'PlaingforData': PlaingforData
     }[dataset_name]
