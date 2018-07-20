@@ -133,7 +133,7 @@ class CityScapes(BaseDataset):
                             'pole', 'traffic_light', 'traffic_sign', 'vegetation', 'terrain',
                             'sky', 'person', 'rider', 'car', 'truck', 'bus', 'train',
                             'motorcycle', 'bicycle']
-        self.ignore_index = 250
+        self.ignore_index = 0
         self.class_map = dict(zip(self.valid_classes, range(19)))
 
         self.colors = [#[  0,   0,   0],
@@ -207,7 +207,7 @@ class SYNTHIA(CityScapes):
         self.valid_classes = [i+1 for i in range(self.n_classes)]
         self.class_names = ['void', 'Sky', 'Building', 'Road', 'Sidewalk', 'Fence',
                             'Vegetation', 'Pole', 'Car', 'Sign', 'Pedestrian', 'Cyclist']
-        self.ignore_index = 250
+        self.ignore_index = 0
         self.class_map = dict(zip(self.valid_classes, range(self.n_classes)))
 
         self.colors = [#[  0,   0,   0],
@@ -251,7 +251,6 @@ class PlayingforData(CityScapes):
     def set_property(self):
         super().set_property()
         self.colors_validc = dict(zip(map(tuple, self.colors), self.valid_classes))
-        # self.colors_label = dict(zip(map(tuple, self.colors), range(self.n_classes)))
 
     def convert_to_labelId(self, samples):
         def cvt(lbl):
