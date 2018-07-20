@@ -4,6 +4,7 @@ import random
 
 from .image import *
 from .video import *
+from .semseg import *
 
 class StaticRandomCrop(object):
     def __init__(self, image_size, crop_size):
@@ -57,5 +58,5 @@ def get_dataset(dataset_name):
         'NeedforSpeed': NeedforSpeed,
         'CityScapes': CityScapes,
         'SYNTHIA': SYNTHIA,
-        'PlaingforData': PlaingforData
+        'PlayingforData': PlayingforData
     }[dataset_name]

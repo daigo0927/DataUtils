@@ -55,8 +55,8 @@ class BaseDataset(Dataset, metaclass = ABCMeta):
               else utils.StaticCenterCrop(image.shape[:2], self.crop_shape)
             image, label = map(cropper, (image, label))
 
-        if self.resize_shape is not None:
-            resizer = partial(cv2.resize, dsize = (0, 0), dst = self.resize_shape)
+        if self.resize_shape is not None: 
+            resizer = partial(cv2.resize, dsize = self.resize_shape[::-1]) # as (x, y) order
             image = resizer(image)
             label = resizer(label, interpolation = cv2.INTER_NEAREST)
 

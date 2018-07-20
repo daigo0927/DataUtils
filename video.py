@@ -73,7 +73,7 @@ class BaseDataset(Dataset, metaclass = ABCMeta):
             images = list(map(cropper, images))
 
         if self.resize_shape is not None:
-            resizer = partial(cv2.resize, dsize = (0,0), dst = self.resize_shape)
+            resizer = partial(cv2.resize, dsize = self.resize_shape[::-1])
             images = list(map(resizer, images))
 
         elif self.resize_scale is not None:
