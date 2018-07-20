@@ -56,7 +56,7 @@ class BaseDataset(Dataset, metaclass = ABCMeta):
             image, label = map(cropper, (image, label))
 
         if self.resize_shape is not None: 
-            resizer = partial(cv2.resize, dsize = self.resize_shape[::-1]) # as (x, y) order
+            resizer = partial(cv2.resize, dsize = tuple(self.resize_shape[::-1])) # as (x, y) order
             image = resizer(image)
             label = resizer(label, interpolation = cv2.INTER_NEAREST)
 

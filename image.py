@@ -32,7 +32,7 @@ class BaseDataset(Dataset, metaclass = ABCMeta):
             image = cropper(image)
 
         if self.resize_shape is not None:
-            image = cv2.resize(image, tuple(self.resize_shape))
+            image = cv2.resize(image, tuple(self.resize_shape[::-1]))
 
         elif self.resize_scale is not None:
             image = cv2.resize(image, dsize = (0,0), fx = self.resize_scale, fy = self.resize_scale)
