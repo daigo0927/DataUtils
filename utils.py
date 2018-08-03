@@ -2,9 +2,8 @@ from itertools import islice
 import numpy as np
 import random
 
-from .image import *
-from .video import *
-from .semseg import *
+from . import image, video, semseg, flow
+
 
 class StaticRandomCrop(object):
     def __init__(self, image_size, crop_size):
@@ -49,14 +48,20 @@ def txtread(uri): # to read label file encoded by .txt (e.g. SYNTHIA dataset)
 
 def get_dataset(dataset_name):
     return {
-        'Food-101':Food101,
-        'DAVIS': DAVIS,
-        'Sintel': Sintel,
-        'SintelClean': SintelClean,
-        'SintelFinal': SintelFinal,
-        # 'UCF101': UCF101
-        'NeedforSpeed': NeedforSpeed,
-        'CityScapes': CityScapes,
-        'SYNTHIA': SYNTHIA,
-        'PlayingforData': PlayingforData
+        'Food-101':image.Food101,
+        'DAVIS_v': video.DAVIS,
+        'Sintel_v': video.Sintel,
+        'SintelClean_v': video.SintelClean,
+        'SintelFinal_v': video.SintelFinal,
+        # 'UCF101': UCF101,
+        'NeedforSpeed': video.NeedforSpeed, 'NeedforSpeed_v': video.NeedforSpeed,
+        'CityScapes': semseg.CityScapes, 'CityScapes_s': semseg.CityScapes,
+        'SYNTHIA': semseg.SYNTHIA, 'SYNTHIA_s': semseg.SYNTHIA,
+        'PlayingforData': semseg.PlayingforData, 'PlayingforData_s': semseg.PlayingforData,
+        'FlyingChairs': flow.FlyingChairs, 'FlyingChairs_f': flow.FlyingChairs,
+        # 'FlyingThings': flow.FlyingThings,
+        'Sintel': flow.Sintel, 'Sintel_f': flow.Sintel,
+        'SintelClean': flow.SintelClean, 'SintelClean_f': flow.SintelClean,
+        'SintelFinal': flow.SintelFinal, 'SintelFinal_f': flow.SintelFinal,
+        'KITTI': flow.KITTI, 'KITTI_f': flow.KITTI
     }[dataset_name]
