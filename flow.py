@@ -115,8 +115,9 @@ class Sintel(BaseDataset):
     def __init__(self, dataset_dir, train_or_val, mode = 'final', color = 'rgb',
                  cropper = 'random', crop_shape = None,
                  resize_shape = None, resize_scale = None):
-        super().__init__(dataset_dir, train_or_val, color, cropper, crop_shape, resize_shape, resize_scale)
         self.mode = mode
+        super().__init__(dataset_dir, train_or_val, color, cropper, crop_shape, resize_shape, resize_scale)
+
     
     def has_no_txt(self):
         p = Path(self.dataset_dir)
