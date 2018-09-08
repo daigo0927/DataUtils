@@ -45,26 +45,35 @@ def window(seq, n=2):
 
 
 class BaseDataset(Dataset, metaclass = ABCMeta):
-    @abstractmethod
-    def __init__(self): pass
-    def __len__(self): return len(self.samples)
+    def __init__(self, dataset_dir, train_or_val,
+                 strides = 3, stretchable = False,
+                 cropper = 'random', crop_shape = None,
+                 resize_shape = None, resize_scale = None):
+        self.dataset_dir = dataset_dir
+        self.train_or_val = train_or_val
+        self.strides = strides
+        self.stretchable = stretchable
+        self.cropper = cropper
+        self.crop_shape = crop_shape
+        self.resize_shape = resize_shape
+        self.resize_scale = resize_scale
+        
+    def __len__(self):
+        return len(self.samples)
+    
     def __getitem__(self, idx):
         img_paths = self.samples[idx]
         if self.stretchable:
-            f, f_end = sorted(random.sample(1, self.strides), 2)
-            t = f/f_end
+            f_0, f_t, f_1 = sorted(np.random.choice(np.arange(self.strides), 3, replace = False))
+            t = (f_t-f_0)/(f_1-f_0)
         else:
-            f = random.randint(1, self.strides-2)
-            f_end = self.strides-1
-            t = f/f_end
+            f_0 = 0
+            f_t = np.random.randint(1, self.strides-1)
+            f_1 = self.strides-1
+            t = f_t/f_1
             
-        img0_path, imgt_path, img1_path = img_paths[0], img_paths[f], img_paths[f_end]
+        img0_path, imgt_path, img1_path = img_paths[f_0], img_paths[f_t], img_paths[f_1]
         img0, imgt, img1 = map(imageio.imread, (img0_path, imgt_path, img1_path))
-
-        if self.color == 'gray':
-            img0 = cv2.cvtColor(img0, cv2.COLOR_RGB2GRAY)[:,:,np.newaxis]
-            imgt = cv2.cvtColor(imgt, cv2.COLOR_RGB2GRAY)[:,:,np.newaxis]
-            img1 = cv2.cvtColor(img1, cv2.COLOR_RGB2GRAY)[:,:,np.newaxis]
 
         images = [img0, imgt, img1]
         if self.crop_shape is not None:
@@ -109,23 +118,15 @@ class BaseDataset(Dataset, metaclass = ABCMeta):
 # DAVIS
 # ------------------------------------------------------
 class DAVIS(BaseDataset):
-    def __init__(self, dataset_dir, train_or_val, resolution = '480p', color = 'rgb',
+    def __init__(self, dataset_dir, train_or_val, resolution = '480p',
                  strides = 3, stretchable = False,
                  cropper = 'random', crop_shape = None, resize_shape = None, resize_scale = None):
         # super(DAVIS, self).__init__()
-        super().__init__()
+        super().__init__(dataset_dir, train_or_val, strides, stretchable,
+                         cropper, crop_shape, resize_shape, resize_scale)
         assert resolution in ['480p', 'Full-Resolution']
         self.resolution = resolution
-        self.color = color
-        self.strides = strides
-        self.stretchable = stretchable
-        self.cropper = cropper
-        self.crop_shape = crop_shape
-        self.resize_shape = resize_shape
-        self.resize_scale = resize_scale
 
-        self.dataset_dir = dataset_dir
-        self.train_or_val = train_or_val
         p = Path(dataset_dir) / (train_or_val + f'_{resolution}_{strides}frames.txt')
         if p.exists(): self.has_txt()
         else: self.has_no_txt()
@@ -161,22 +162,14 @@ class DAVIS(BaseDataset):
 # Sintel
 # ============================================================
 class Sintel(BaseDataset):
-    def __init__(self, dataset_dir, train_or_val, mode = 'final', color = 'rgb',
+    def __init__(self, dataset_dir, train_or_val, mode = 'final',
                  strides = 3, stretchable = False,
                  cropper = 'random', crop_shape = None, resize_shape = None, resize_scale = None):
-        super(Sintel, self).__init__()
+        super().__init__(dataset_dir, train_or_val, strides, stretchable,
+                         cropper, crop_shape, resize_shape, resize_scale)
         self.mode = mode
-        self.color = color
-        self.strides = strides
-        self.stretchable = stretchable
-        self.cropper = cropper
-        self.crop_shape = crop_shape
-        self.resize_shape = resize_shape
-        self.resize_scale = resize_scale
 
-        self.dataset_dir = dataset_dir
-        self.train_or_val = train_or_val
-        p = Path(dataset_dir) / (train_or_val + f'_{self.strides}frames.txt')
+        p = Path(dataset_dir) / (train_or_val + f'_{strides}frames.txt')
         if p.exists(): self.has_txt()
         else: self.has_no_txt()
     
@@ -192,17 +185,16 @@ class Sintel(BaseDataset):
         self.split(samples)
 
 class SintelFinal(Sintel):
-    def __init__(self, dataset_dir, train_or_test, color = 'rgb', strides = 3, stretchable = False,
+    def __init__(self, dataset_dir, train_or_val, strides = 3, stretchable = False,
                  cropper = 'random', crop_shape = None, resize_shape = None, resize_scale = None):
-        super(SintelFinal, self).__init__(dataset_dir, train_or_test, mode = 'final', color = color,
-                                          strides = strides, stretchable = stretchable,
-                                          cropper = cropper, crop_shape = crop_shape, resize_shape = resize_shape, resize_scale = resize_scale)
+        super(SintelFinal, self).__init__(dataset_dir, train_or_val, 'final', strides, stretchable,
+                                          cropper, crop_shape, resize_shape, resize_scale)
 
 class SintelClean(Sintel):
-    def __init__(self, dataset_dir, train_or_test, color = 'rgb', strides = 3, stretchable = False,
+    def __init__(self, dataset_dir, train_or_val, strides = 3, stretchable = False,
                  cropper = 'random', crop_shape = None, resize_shape = None, resize_scale = None):
-        super(SintelClean, self).__init__(dataset_dir, train_or_test, mode = 'clean', color = color,
-                                          cropper = cropper, crop_shape = crop_shape, resize_shape = resize_shape, resize_scale = resize_scale)
+        super(SintelClean, self).__init__(dataset_dir, train_or_val, 'clean', strides, stretchable,
+                                          cropper, crop_shape, resize_shape, resize_scale)
 
 # KITTI
 # ============================================================
