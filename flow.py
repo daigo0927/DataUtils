@@ -101,7 +101,7 @@ class BaseDataset(Dataset, metaclass = ABCMeta):
             image_1 = cv2.resize(image_1, dsize = (0, 0), fx = sx, fy = sy)
             flow = rescale_flow(flow, self.resize_scale)
 
-        images = np.stack([image_0, image_1], axis = 0)/255.
+        images = np.stack([image_0, image_1], axis = 0)
         return images, flow
     
     def has_txt(self):

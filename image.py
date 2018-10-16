@@ -87,9 +87,9 @@ class BaseDataset(Dataset, metaclass = ABCMeta):
             label = utils.one_hot(label, self.num_classes)
 
         if self.use_label:
-            return np.array(image)/255., label
+            return np.array(image), label
         else:
-            return np.array(image)/255.
+            return np.array(image)
 
     def has_txt(self):
         p = Path(self.dataset_dir) / (self.train_or_val + '.txt')

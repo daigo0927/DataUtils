@@ -83,7 +83,7 @@ class BaseDataset(Dataset, metaclass = ABCMeta):
             image = resizer(image)
             label = resizer(label, interpolation = cv2.INTER_NEAREST)
 
-        return image/255., label
+        return image, label
 
     def has_txt(self):
         p = Path(self.dataset_dir) / (self.train_or_val + '.txt')

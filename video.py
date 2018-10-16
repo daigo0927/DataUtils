@@ -76,7 +76,7 @@ class BaseDataset(Dataset, metaclass = ABCMeta):
             resizer = partial(cv2.resize, dsize = (0,0), fx = sx, fy = sy)
             image_0, image_t, image_1 = map(resizer, [image_0, image_t, image_1])
 
-        images = np.stack([image_0, image_t, image_1], axis = 0)/255.
+        images = np.stack([image_0, image_t, image_1], axis = 0)
         return images, t
 
     def has_txt(self): 
