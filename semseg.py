@@ -1,16 +1,14 @@
+import os
+import numpy as np
+import random
+import cv2
 from torch.utils.data import Dataset
 from pathlib import Path
 from functools import partial
-from itertools import islice
+from itertools import islice, groupby
 from tqdm import tqdm
 from fabric import colors
-import os
-import numpy as np
-import imageio
-import torch
-import random
-import cv2
-import warnings
+from imageio import imread, imsave
 
 from abc import abstractmethod, ABCMeta
 
@@ -19,18 +17,37 @@ from . import utils
 import pdb
 
 
+def load_textlabel(uri):
+    """ to read label file encoded by .txt (e.g. SYNTHIA dataset) """
+    with open(uri, 'r') as f:
+        label = np.array([list(map(int, i.strip().split())) for i in f.readlines()])
+    return label
+
+
 class BaseDataset(Dataset, metaclass = ABCMeta):
-    def __init__(self, dataset_dir, train_or_val,
-                 cropper = 'random', crop_shape = None,
+    """ Abstract class to flexibly utilize torch.utils.data API """
+    def __init__(self, dataset_dir, train_or_val, origin_size = None,
+                 crop_type = 'random', crop_shape = None,
                  resize_shape = None, resize_scale = None):
+        """
+        Args:
+        - dataset_dir str: target dataset directory
+        - train_or_val str: flag indicates train or validation
+        - origin_size tuple<int>: original size of target images
+        - crop_type str: crop type either of [random, center, None]
+        - crop_shape tuple<int>: crop shape
+        - resize_shape tuple<int>: resize shape
+        - resize_scale tuple<int>: resize scale
+        """
         self.dataset_dir = dataset_dir
         assert train_or_val in ['train', 'val'], 'Argument should be either [train, val]'
         self.train_or_val = train_or_val
-        self.cropper = cropper
+
+        self.image_size = utils.get_size(origin_size, crop_shape, resize_shape, resize_scale)
+        self.crop_type = crop_type
         self.crop_shape = crop_shape
         self.resize_shape = resize_shape
         self.resize_scale = resize_scale
-        self.label_reader = imageio.imread
         
         self.set_property()
         p = Path(dataset_dir) / (train_or_val + '.txt')
@@ -42,8 +59,8 @@ class BaseDataset(Dataset, metaclass = ABCMeta):
         
     def __getitem__(self, idx):
         img_path, lbl_path = self.samples[idx]
-        image = imageio.imread(img_path)
-        label = self.label_reader(lbl_path)
+        image = imread(img_path)
+        label = self.load_label(lbl_path)
         image, label = map(np.array, (image, label))
         label = self.encode_segmap(label)
 
@@ -51,7 +68,7 @@ class BaseDataset(Dataset, metaclass = ABCMeta):
             image = np.stack([image]*3, axis = 2)
 
         if self.crop_shape is not None:
-            cropper = utils.StaticRandomCrop(image.shape[:2], self.crop_shape) if self.cropper == 'random'\
+            cropper = utils.StaticRandomCrop(image.shape[:2], self.crop_shape) if self.crop_type == 'random'\
               else utils.StaticCenterCrop(image.shape[:2], self.crop_shape)
             image, label = map(cropper, (image, label))
 
@@ -60,12 +77,13 @@ class BaseDataset(Dataset, metaclass = ABCMeta):
             image = resizer(image)
             label = resizer(label, interpolation = cv2.INTER_NEAREST)
 
-        elif self.resize_scale is not None:
-            resizer = partial(cv2.resize, dsize = (0, 0), fx = self.resize_scale, fy = self.resize_scale)
+        if self.resize_scale is not None:
+            sx, sy = self.resize_scale
+            resizer = partial(cv2.resize, dsize = (0, 0), fx = sx, fy = sy)
             image = resizer(image)
             label = resizer(label, interpolation = cv2.INTER_NEAREST)
 
-        return image, label
+        return image/255., label
 
     def has_txt(self):
         p = Path(self.dataset_dir) / (self.train_or_val + '.txt')
@@ -84,9 +102,9 @@ class BaseDataset(Dataset, metaclass = ABCMeta):
 
     def split(self, samples):
         p = Path(self.dataset_dir)
-        test_ratio = 0.1
+        val_ratio = 0.1
         random.shuffle(samples)
-        idx = int(len(samples) * (1 - test_ratio))
+        idx = int(len(samples) * (1 - val_ratio))
         train_samples = samples[:idx]
         val_samples = samples[idx:]
 
@@ -103,11 +121,17 @@ class BaseDataset(Dataset, metaclass = ABCMeta):
     def encode_segmap(self, segmap):
         pass
 
+    def load_label(self, uri):
+        return imread(uri)
+
     
 class CityScapes(BaseDataset):
-    def __init__(self, dataset_dir, train_or_val, cropper = 'random',
-                 crop_shape = None, resize_shape = None, resize_scale = None):
-        super().__init__(dataset_dir, train_or_val, cropper, crop_shape, resize_shape, resize_scale)
+    """ CityScapes dataset pipeline """
+    def __init__(self, dataset_dir, train_or_val, origin_size = None,
+                 crop_type = 'random', crop_shape = None,
+                 resize_shape = None, resize_scale = None):
+        super().__init__(dataset_dir, train_or_val, origin_size,
+                         crop_type, crop_shape, resize_shape, resize_scale)
 
     def has_no_txt(self):
         p = Path(self.dataset_dir)
@@ -183,10 +207,12 @@ class CityScapes(BaseDataset):
 
 
 class SYNTHIA(CityScapes):
-    def __init__(self, dataset_dir, train_or_val, cropper = 'random',
-                 crop_shape = None, resize_shape = None, resize_scale = None):
-        super().__init__(dataset_dir, train_or_val, cropper, crop_shape, resize_shape, resize_scale)
-        self.label_reader = utils.txtread
+    """ SYNTHIA dataset pipeline """
+    def __init__(self, dataset_dir, train_or_val, origin_size = None,
+                 crop_type = 'random', crop_shape = None,
+                 resize_shape = None, resize_scale = None):
+        super().__init__(dataset_dir, train_or_val, origin_size,
+                         crop_type, crop_shape, resize_shape, resize_scale)
 
     def has_no_txt(self):
         p = Path(self.dataset_dir)
@@ -225,11 +251,17 @@ class SYNTHIA(CityScapes):
 
         self.label_colors = dict(zip(range(self.n_classes), self.colors))
 
+    def load_label(self, uri):
+        return load_textlabel(uri)
+
 
 class PlayingforData(CityScapes):
-    def __init__(self, dataset_dir, train_or_val, cropper = 'random',
-                 crop_shape = None, resize_shape = None, resize_scale = None):
-        super().__init__(dataset_dir, train_or_val, cropper, crop_shape, resize_shape, resize_scale)
+    """ GrandTheftAuto dataset pipeline """
+    def __init__(self, dataset_dir, train_or_val, origin_size = None,
+                 crop_type = 'random', crop_shape = None,
+                 resize_shape = None, resize_scale = None):
+        super().__init__(dataset_dir, train_or_val, origin_size,
+                         crop_type, crop_shape, resize_shape, resize_scale)
                 
     def has_no_txt(self):
         p = Path(self.dataset_dir)
@@ -262,15 +294,29 @@ class PlayingforData(CityScapes):
         print(colors.green('\rConverting original label RGB value to label-id, this operation may take some hours.'))
         for i, (img_p, lbl_p) in enumerate(tqdm(samples)):
             filename = lbl_p.split('/')[-1] # #.png
-            label = np.array(imageio.imread(lbl_p)[:, :, :3])
+            label = np.array(imread(lbl_p)[:, :, :3])
             labelId = np.array([[cvt(lbl) for lbl in lbls] for lbls in label], dtype = np.uint8)
 
             lid_p = lbl_p.replace('labels', 'labelIds')
-            imageio.imsave(lid_p, labelId)
+            imsave(lid_p, labelId)
             samples[i] = (img_p, lid_p)
 
         return samples
             
 
+def get_dataset(dataset_name):
+    """
+    Get specified dataset 
+    Args: dataset_name str: target dataset name
+    Returns: dataset tf.data.Dataset: target dataset class
 
-            
+    Available dataset pipelines
+    - CityScapes
+    - SYNTHIA
+    - PlayingforData
+    """
+    datasets = {"CityScapes":CityScapes,
+                "SYNTHIA":SYNTHIA,
+                "PlayingforData":PlayingforData
+                }
+    return datasets[dataset_name]

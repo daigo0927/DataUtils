@@ -1,6 +1,6 @@
 from torch.utils.data import Dataset
 from pathlib import Path
-from itertools import islice
+from itertools import groupby
 import numpy as np
 import imageio
 import torch
@@ -10,22 +10,68 @@ from functools import partial
 from abc import abstractmethod, ABCMeta
 
 from . import utils
-from .flow_utils import load_flow
+
+
+def load_flow(uri):
+    """
+    Function to load optical flow data
+    Args: str uri: target flow path
+    Returns: np.ndarray: extracted optical flow
+    """
+    with open(uri, 'rb') as f:
+        magic = float(np.fromfile(f, np.float32, count = 1)[0])
+        if magic == 202021.25:
+            w, h = np.fromfile(f, np.int32, count = 1)[0], np.fromfile(f, np.int32, count = 1)[0]
+            data = np.fromfile(f, np.float32, count = h*w*2)
+            data.resize((h, w, 2))
+            return data
+        return None
+
+def resize_flow(flow, resize_shape):
+    if flow.ndim != 3:
+        raise ValueError(f'Flow dimension should be 3, but found {flow.ndim} dimension')
+    h, w = flow.shape[:2]
+    th, tw = resize_shape # target size
+    scale = np.array([tw/w, th/h]).reshape((1, 1, 2))
+    flow = cv2.resize(flow, dsize = (tw, th))*scale
+    flow = np.float32(flow)
+    return flow
+
+def rescale_flow(flow, resize_scale):
+    if flow.ndim != 3:
+        raise ValueError(f'Flow dimension should be 3, but found {flow.ndim} dimension')
+    h, w = flow.shape[:2]
+    th, tw = int(h*resize_scale[0]), int(w*resize_scale[1])
+    scale = np.array(resize_scale).reshape((1, 1, 2))
+    flow = cv2.resize(flow, dsize = (tw, th))*scale
+    flow = np.float32(flow)
+    return flow
 
 
 class BaseDataset(Dataset, metaclass = ABCMeta):
-    def __init__(self, dataset_dir, train_or_val, color = 'rgb',
-                 cropper = 'random', crop_shape = None,
+    """ Abstract class to flexibly utilize torch.data pipeline """
+    def __init__(self, dataset_dir, train_or_val, origin_size = None,
+                 crop_type = 'random', crop_shape = None,
                  resize_shape = None, resize_scale = None):
+        """ 
+        Args:
+        - dataset_dir str: target dataset directory
+        - train_or_val str: flag indicates train or validation
+        - origin_size tuple<int>: original size of target images
+        - crop_type str: crop type, 'random', 'center', or None
+        - crop_shape tuple<int>: crop shape
+        - resize_shape tuple<int>: resize shape
+        - resize_scale tuple<int>: resize scale (<= 1)
+        """
         self.dataset_dir = dataset_dir
         assert train_or_val in ['train', 'val'], 'Argument should be either of [train, val]'
         self.train_or_val = train_or_val
-        self.color = color
-        self.cropper = cropper
+
+        self.image_size = utils.get_size(origin_size, crop_shape, resize_shape, resize_scale)
+        self.crop_type = crop_type
         self.crop_shape = crop_shape
         self.resize_shape = crop_shape
         self.resize_scale = resize_scale
-        self.flow_reader = load_flow
 
         p = Path(dataset_dir) / (train_or_val + '.txt')
         if p.exists(): self.has_txt()
@@ -35,30 +81,27 @@ class BaseDataset(Dataset, metaclass = ABCMeta):
         return len(self.samples)
     
     def __getitem__(self, idx):
-        img1_path, img2_path, flow_path = self.samples[idx]
-        img1, img2 = map(imageio.imread, (img1_path, img2_path))
-        flow = self.flow_reader(flow_path)
-
-        if self.color == 'gray':
-            img1 = cv2.cvtColor(img1, cv2.COLOR_RGB2GRAY)[:,:,np.newaxis]
-            img2 = cv2.cvtColor(img2, cv2.COLOR_RGB2GRAY)[:,:,np.newaxis]
-
-        images = [img1, img2]
+        img0_path, img1_path, flow_path = self.samples[idx]
+        image_0, image_1 = map(imageio.imread, (img0_path, img1_path))
+        flow = self.load_flow(flow_path)
+        
         if self.crop_shape is not None:
-            cropper = utils.StaticRandomCrop(img1.shape[:2], self.crop_shape) if self.cropper == 'random'\
-              else utils.StaticCenterCrop(img1.shape[:2], self.crop_shape)
-            images = list(map(cropper, images))
-            flow = cropper(flow)
+            cropper = utils.StaticRandomCrop(image_0.shape[:2], self.crop_shape) if self.crop_type == 'random'\
+              else utils.StaticCenterCrop(image_0.shape[:2], self.crop_shape)
+            image_0, image_1, flow = map(cropper, [image_0, image_1, flow])
+            
         if self.resize_shape is not None:
-            resizer = partial(cv2.resize, dsize = tuple(self.resize_shape[::-1])) # put as (x, y) order
-            images = list(map(resizer, images))
-            flow = resizer(flow)
-        elif self.resize_scale is not None:
-            resizer = partial(cv2.resize, dsize = (0,0), fx = self.resize_scale, fy = self.resize_scale)
-            images = list(map(resizer, images))
-            flow = resizer(flow)
+            image_0 = cv2.resize(image_0, dsize = tuple(self.resize_shape[::-1]))
+            image_1 = cv2.resize(image_1, dsize = tuple(self.resize_shape[::-1]))
+            flow = resize_flow(flow, self.resize_shape)
+            
+        if self.resize_scale is not None:
+            sx, sy = self.resize_scale
+            image_0 = cv2.resize(image_0, dsize = (0, 0), fx = sx, fy = sy)
+            image_1 = cv2.resize(image_1, dsize = (0, 0), fx = sx, fy = sy)
+            flow = rescale_flow(flow, self.resize_scale)
 
-        images = np.array(images)
+        images = np.stack([image_0, image_1], axis = 0)/255.
         return images, flow
     
     def has_txt(self):
@@ -66,18 +109,18 @@ class BaseDataset(Dataset, metaclass = ABCMeta):
         self.samples = []
         with open(p, 'r') as f:
             for i in f.readlines():
-                img1, img2, flow = i.split(',')
-                flow = flow.strip()
-                self.samples.append((img1, img2, flow))
+                img_0_path, img_1_path, flow_path = i.split(',')
+                flow_path = flow_path.strip()
+                self.samples.append((img_0_path, img_1_path, flow_path))
 
     @abstractmethod
     def has_no_txt(self): ...
     
     def split(self, samples):
         p = Path(self.dataset_dir)
-        test_ratio = 0.1
+        val_ratio = 0.1
         random.shuffle(samples)
-        idx = int(len(samples) * (1 - test_ratio))
+        idx = int(len(samples) * (1 - val_ratio))
         train_samples = samples[:idx]
         val_samples = samples[idx:]
 
@@ -86,14 +129,19 @@ class BaseDataset(Dataset, metaclass = ABCMeta):
 
         self.samples = train_samples if self.train_or_val == 'train' else val_samples
 
+    def load_flow(self, flow_path):
+        return load_flow(flow_path)
+
 
 # FlyingChairs
 # ============================================================
 class FlyingChairs(BaseDataset):
-    def __init__(self, dataset_dir, train_or_val = 'train', color = 'rgb',
-                 cropper = 'random', crop_shape = None,
+    """ FlyingChairs dataset pipeline """
+    def __init__(self, dataset_dir, train_or_val = 'train', origin_size = None,
+                 crop_type = 'random', crop_shape = None,
                  resize_shape = None, resize_scale = None):
-        super().__init__(dataset_dir, train_or_val, color, cropper, crop_shape, resize_shape, resize_scale)
+        super().__init__(dataset_dir, train_or_val, origin_size,
+                         crop_type, crop_shape, resize_shape, resize_scale)
 
     def has_no_txt(self):
         p = Path(self.dataset_dir) / 'data'
@@ -105,56 +153,88 @@ class FlyingChairs(BaseDataset):
 
 # FlyingThings
 # ============================================================
-class FlyingThings(BaseDataset):
-    def __init__(self): ...
+class FlyingThings3D(BaseDataset):
+    def __init__(self, dataset_dir, train_or_val = 'train', origin_size = None,
+                 crop_type = 'random', crop_shape = None,
+                 resize_shape = None, resize_scale = None):
+        super().__init__(dataset_dir, train_or_val, origin_size,
+                         crop_type, crop_shape, resize_shape, resize_scale)
 
+    def has_no_txt(self):
+        # TODO
+        pass
 
+    
 # Sintel
 # ============================================================
 class Sintel(BaseDataset):
-    def __init__(self, dataset_dir, train_or_val, mode = 'final', color = 'rgb',
-                 cropper = 'random', crop_shape = None,
+    """ MPI-Sintel-complete dataset pipeline """
+    def __init__(self, dataset_dir, train_or_val, mode = 'clean',
+                 origin_size = None, crop_type = 'random', crop_shape = None,
                  resize_shape = None, resize_scale = None):
         self.mode = mode
-        super().__init__(dataset_dir, train_or_val, color, cropper, crop_shape, resize_shape, resize_scale)
-
+        super().__init__(dataset_dir, train_or_val, origin_size,
+                         crop_type, crop_shape, resize_shape, resize_scale)
     
     def has_no_txt(self):
         p = Path(self.dataset_dir)
         p_img = p / 'training' / self.mode
         p_flow = p / 'training/flow'
-        samples = []
-
+    
         collections_of_scenes = sorted(map(str, p_img.glob('**/*.png')))
-        from itertools import groupby
         collections = [list(g) for k, g in groupby(collections_of_scenes, lambda x: x.split('/')[-2])]
-
         samples = [(*i, i[0].replace(self.mode, 'flow').replace('.png', '.flo'))\
                    for collection in collections for i in utils.window(collection, 2)]
         self.split(samples)
 
-class SintelFinal(Sintel):
-    def __init__(self, dataset_dir, train_or_val, color = 'rgb',
-                 cropper = 'random', crop_shape = None,
-                 resize_shape = None, resize_scale = None):
-        super().__init__(dataset_dir, train_or_val, 'final', color,
-                         cropper, crop_shape, resize_shape, resize_scale)
-
 class SintelClean(Sintel):
-    def __init__(self, dataset_dir, train_or_val, color = 'rgb',
-                 cropper = 'random', crop_shape = None,
+    """ MPI-Sintel-complete dataset (clean path) pipeline """
+    def __init__(self, dataset_dir, train_or_val, origin_size = None,
+                 crop_type = 'random', crop_shape = None,
                  resize_shape = None, resize_scale = None):
-        super().__init__(dataset_dir, train_or_val, 'clean', color,
-                         cropper, crop_shape, resize_shape, resize_scale)
+        super().__init__(dataset_dir, train_or_val, 'clean', origin_size,
+                         crop_type, crop_shape, resize_shape, resize_scale)
 
+    def has_txt(self):
+        p = Path(self.dataset_dir) / (self.train_or_val+'.txt')
+        self.samples = []
+        with open(p, 'r') as f:
+            for i in f.readlines():
+                img_0_path, img_1_path, flow_path = i.split(',')
+                img_0_path, img_1_path = map(lambda p: p.replace('final', 'clean'),
+                                             (img_0_path, img_1_path))
+                flow_path = flow_path.strip()
+                self.samples.append((img_0_path, img_1_path, flow_path))
+
+class SintelFinal(Sintel):
+    """ MPI-Sintel-complete dataset (clean path) pipeline """
+    def __init__(self, dataset_dir, train_or_val, origin_size = None,
+                 crop_type = 'random', crop_shape = None,
+                 resize_shape = None, resize_scale = None):
+        super().__init__(dataset_dir, train_or_val, 'final', origin_size,
+                         crop_type, crop_shape, resize_shape, resize_scale)
+
+    def has_txt(self):
+        p = Path(self.dataset_dir) / (self.train_or_val+'.txt')
+        self.samples = []
+        with open(p, 'r') as f:
+            for i in f.readlines():
+                img_0_path, img_1_path, flow_path = i.split(',')
+                img_0_path, img_1_path = map(lambda p: p.replace('clean', 'final'),
+                                             (img_0_path, img_1_path))
+                flow_path = flow_path.strip()
+                self.samples.append((img_0_path, img_1_path, flow_path))
+
+                
 # KITTI
 # ============================================================
 class KITTI(BaseDataset):
-    def __init__(self, dataset_dir, train_or_val = 'train', color = 'rgb',
-                 cropper = 'random', crop_shape = (320, 448),
+    """ KITTI 2015 dataset """
+    def __init__(self, dataset_dir, train_or_val = 'train', origin_size = None,
+                 crop_type = 'random', crop_shape = None,
                  resize_shape = None, resize_scale = None):
-        super().__init__(dataset_dir, train_or_val, color, cropper, crop_shape, resize_shape, resize_scale)
-        self.flow_reader = self._readflow
+        super().__init__(dataset_dir, train_or_val, origin_size,
+                         crop_type, crop_shape, resize_shape, resize_scale)
 
     def has_no_txt(self):
         p = Path(self.dataset_dir)
@@ -168,7 +248,7 @@ class KITTI(BaseDataset):
             samples.append(tuple(map(str, (p_i0, p_i1, p_f))))
         self.split(samples)
 
-    def _readflow(self, uri):
+    def load_flow(self, uri):
         # flow_origin = imageio.imread(uri, format = 'PNG-FI')
         flow_origin = cv2.imread(uri, cv2.IMREAD_UNCHANGED)
         flow = flow_origin[:, :, 2:0:-1].astype(np.float32)
@@ -177,3 +257,22 @@ class KITTI(BaseDataset):
         flow[np.abs(flow) < 1e-10] = 1e-10
         flow[invalid] = 0
         return flow
+
+    
+def get_dataset(dataset_name):
+    """
+    Get specified dataset 
+    Args: dataset_name str: target dataset name
+    Returns: dataset tf.data.Dataset: target dataset class
+
+    Available dataset pipelines
+    - FlyingChairs
+    - Sintel, SintelClean, SintelFinal
+    - KITTI
+    """
+    datasets = {"FlyingChairs":FlyingChairs,
+                "Sintel":Sintel,
+                "SintelClean":SintelClean,
+                "SintelFinal":SintelFinal,
+                "KITTI":KITTI}
+    return datasets[dataset_name]
