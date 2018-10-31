@@ -154,9 +154,21 @@ class FlyingChairs(BaseDataset):
 # FlyingThings3D
 # ============================================================
 class FlyingThings3D(BaseDataset):
+    """ FlyingThings3D dataset class """
     def __init__(self, dataset_dir, train_or_val = 'train', flow_type = 'for',
                  origin_size = None, crop_type = 'random', crop_shape = None,
                  resize_shape = None, resize_scale = None):
+        """ 
+        Args:
+        - dataset_dir str: target dataset directory
+        - train_or_val str: flag indicates train or validation
+        - flow_type str: utilizing flow direction for/bi
+        - origin_size tuple<int>: original size of target images
+        - crop_type str: crop type, 'random', 'center', or None
+        - crop_shape tuple<int>: crop shape
+        - resize_shape tuple<int>: resize shape
+        - resize_scale tuple<int>: resize scale (<= 1)
+        """
         if flow_type not in ['for', 'bi']:
             raise KeyError(f'flow_type must be either for/bi, but {flow_type} is passed')
         self.flow_type = flow_type
