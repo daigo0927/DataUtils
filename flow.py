@@ -178,31 +178,31 @@ class FlyingThings3D(BaseDataset):
     def __getitem__(self, idx):
         img0_path, img1_path, for_path, back_path = self.samples[idx]
         image_0, image_1 = map(imageio.imread, (img0_path, img1_path))
-        flow_for, flow_back = map(self.load_flow, (for_path, back_path))
+        flow = list(map(self.load_flow, (for_path, back_path))) if self.flow_type == 'bi'\
+          else [self.load_flow(for_path)]
         
         if self.crop_shape is not None:
             cropper = utils.StaticRandomCrop(image_0.shape[:2], self.crop_shape) if self.crop_type == 'random'\
               else utils.StaticCenterCrop(image_0.shape[:2], self.crop_shape)
-            image_0, image_1, flow_for, flow_back = map(cropper, [image_0, image_1, flow_for, flow_back])
+            image_0, image_1 = map(cropper, [image_0, image_1])
+            flow = list(map(cropper, flow))
             
         if self.resize_shape is not None:
             image_0 = cv2.resize(image_0, dsize = tuple(self.resize_shape[::-1]))
             image_1 = cv2.resize(image_1, dsize = tuple(self.resize_shape[::-1]))
-            flow_for = resize_flow(flow_for, self.resize_shape)
-            flow_back = resize_flow(flow_back, self.resize_shape)
+            flow = list(map(lambda f: resize_flow(f, self.resize_shape), flow))
             
         if self.resize_scale is not None:
             sx, sy = self.resize_scale
             image_0 = cv2.resize(image_0, dsize = (0, 0), fx = sx, fy = sy)
             image_1 = cv2.resize(image_1, dsize = (0, 0), fx = sx, fy = sy)
-            flow_for = rescale_flow(flow_for, self.resize_scale)
-            flow_back = rescale_flow(flow_back, self.resize_scale)
+            flow = list(map(lambda f: resize_flow(f, self.resize_scale), flow))
 
         images = np.stack([image_0, image_1], axis = 0)
         if self.flow_type == 'for':
-            return images, flow_for
+            return images, flow[0]
         elif self.flow_type == 'bi':
-            return images, flow_for, flow_back
+            return images, flow[0], flow[1]
 
     def has_txt(self):
         p = Path(self.dataset_dir) / (self.train_or_val + '.txt')
