@@ -6,7 +6,9 @@ import imageio
 import torch
 import random
 import cv2
+import re
 from functools import partial
+from tqdm import tqdm
 from abc import abstractmethod, ABCMeta
 
 from . import utils
@@ -26,6 +28,14 @@ def load_flow(uri):
             data.resize((h, w, 2))
             return data
         return None
+
+def save_flow(path, flow):
+    magic = np.array([202021.25], np.float32)
+    h, w = flow.shape[:2]
+    h, w = np.array([h], np.int32), np.array([w], np.int32)
+
+    with open(path, 'wb') as f:
+        magic.tofile(f); w.tofile(f); h.tofile(f); flow.tofile(f)    
 
 def resize_flow(flow, resize_shape):
     if flow.ndim != 3:
@@ -83,6 +93,8 @@ class BaseDataset(Dataset, metaclass = ABCMeta):
     def __getitem__(self, idx):
         img0_path, img1_path, flow_path = self.samples[idx]
         image_0, image_1 = map(imageio.imread, (img0_path, img1_path))
+        image_0 = cv2.cvtColor(image_0, cv2.COLOR_GRAY2RGB) if image_0.ndim == 2 else image_0
+        image_1 = cv2.cvtColor(image_1, cv2.COLOR_GRAY2RGB) if image_1.ndim == 2 else image_1
         flow = self.load_flow(flow_path)
         
         if self.crop_shape is not None:
@@ -234,11 +246,71 @@ class FlyingThings3D(BaseDataset):
             for col_img, col_for, col_back in zip(collections_img, collections_for, collections_back):
                 samples += [(*i, p_for, p_back) for i, p_for, p_back in \
                             zip(utils.window(col_img, 2), col_for[:-1], col_back[1:])]
+        # Convert .pfm file to .flo files
+        samples = self.convert_to_flo(samples)
         self.split(samples)
 
+    def convert_to_flo(self, samples):
+        """ Convert original .pfm images into .flo files in order to read fast """
+        samples_new = []
+        for i_0, i_1, path_f, path_b in tqdm(samples, desc = 'Convert'):
+            flow_f = utils.readPFM(path_f)[:, :, :2]
+            flow_b = utils.readPFM(path_b)[:, :, :2]
+            path_f_new = path_f.replace('.pfm', '.flo')
+            path_b_new = path_b.replace('.pfm', '.flo')
+            save_flow(path_f_new, flow_f)
+            save_flow(path_b_new, flow_b)
+            samples_new.append((i_0, i_1, path_f_new, path_b_new))
+        return samples_new
+            
     def load_flow(self, flow_path):
-        data = utils.readPFM(flow_path)
-        return data[:,:,:2]
+        return load_flow(flow_path)
+
+
+class Monkaa(FlyingThings3D):
+    """ Monkaa dataset class """
+    def __init__(self, dataset_dir, train_or_val = 'train', flow_type = 'for',
+                 origin_size = None, crop_type = 'random', crop_shape = None,
+                 resize_shape = None, resize_scale = None):
+        """ 
+        Args:
+        - dataset_dir str: target dataset directory
+        - train_or_val str: flag indicates train or validation
+        - flow_type str: utilizing flow direction for/bi
+        - origin_size tuple<int>: original size of target images
+        - crop_type str: crop type, 'random', 'center', or None
+        - crop_shape tuple<int>: crop shape
+        - resize_shape tuple<int>: resize shape
+        - resize_scale tuple<int>: resize scale (<= 1)
+        """
+        super().__init__(dataset_dir, train_or_val, flow_type, origin_size,
+                         crop_type, crop_shape, resize_shape, resize_scale)
+
+    def has_no_txt(self):
+        print('Creating file holding data paths, this may take for a while')
+        p = Path(self.dataset_dir)
+        p_img = p / 'frames_cleanpass'
+        p_flow = p / 'optical_flow'
+
+        samples = []
+        # for d in ['A', 'B', 'C']:
+        #     p_img_d = p_img / d
+        #     p_flow_d = p_flow / d
+
+        #     p_imgs = sorted(map(str, p_img_d.glob('**/left/*.png')))
+        #     p_fors = sorted(map(str, p_flow_d.glob('**/into_future/left/*.pfm')))
+        #     p_backs = sorted(map(str, p_flow_d.glob('**/into_past/left/*.pfm')))
+        #     collections_img = [list(g) for k, g in groupby(p_imgs, lambda x: x.split('/')[-3])]
+        #     collections_for = [list(g) for k, g in groupby(p_fors, lambda x: x.split('/')[-4])]
+        #     collections_back = [list(g) for k, g in groupby(p_backs, lambda x: x.split('/')[-4])]
+
+        #     for col_img, col_for, col_back in zip(collections_img, collections_for, collections_back):
+        #         samples += [(*i, p_for, p_back) for i, p_for, p_back in \
+        #                     zip(utils.window(col_img, 2), col_for[:-1], col_back[1:])]
+        # Convert .pfm file to .flo files
+        samples = self.convert_to_flo(samples)
+        self.split(samples)
+    
 
     
 # Sintel
@@ -326,6 +398,7 @@ class KITTI(BaseDataset):
 
     def load_flow(self, uri):
         # flow_origin = imageio.imread(uri, format = 'PNG-FI')
+        # seems unlike to README, but visually validated
         flow_origin = cv2.imread(uri, cv2.IMREAD_UNCHANGED)
         flow = flow_origin[:, :, 2:0:-1].astype(np.float32)
         invalid = (flow_origin[:, :, 0] == 0)
@@ -333,6 +406,30 @@ class KITTI(BaseDataset):
         flow[np.abs(flow) < 1e-10] = 1e-10
         flow[invalid] = 0
         return flow
+
+
+# HD1K dataset
+class HD1K(KITTI):
+    """ HD1K dataset """
+    def __init__(self, dataset_dir, train_or_val = 'train', origin_size = None,
+                 crop_type = 'random', crop_shape = None,
+                 resize_shape = None, resize_scale = None):
+        super().__init__(dataset_dir, train_or_val, origin_size,
+                         crop_type, crop_shape, resize_shape, resize_scale)
+
+    def has_no_txt(self):
+        p = Path(self.dataset_dir)
+        p_img = p / 'hd1k_input/image_2'
+        p_flow = p / 'hd1k_flow_gt/flow_occ'
+        samples = []
+
+        collections_of_scenes = sorted(map(str, p_img.glob('*.png')))
+        collections = [list(g) for k, g in groupby(collections_of_scenes,
+                                                   lambda x: re.split('[/_.]', x)[-3])]
+        samples = [(*i, i[0].replace('hd1k_input/image_2', 'hd1k_flow_gt/flow_occ'))\
+                   for collection in collections for i in utils.window(collection, 2)]
+        self.split(samples)
+            
 
     
 def get_dataset(dataset_name):
@@ -345,11 +442,13 @@ def get_dataset(dataset_name):
     - FlyingChairs, FlyingThings3D
     - Sintel, SintelClean, SintelFinal
     - KITTI
+    - HD1K
     """
     datasets = {"FlyingChairs":FlyingChairs,
                 "FlyingThings3D":FlyingThings3D,
                 "Sintel":Sintel,
                 "SintelClean":SintelClean,
                 "SintelFinal":SintelFinal,
-                "KITTI":KITTI}
+                "KITTI":KITTI,
+                "HD1K":HD1K}
     return datasets[dataset_name]
